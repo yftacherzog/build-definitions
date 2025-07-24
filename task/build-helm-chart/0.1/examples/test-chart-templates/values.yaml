@@ -1,0 +1,31 @@
+# Default values for myapp chart
+replicaCount: 1
+
+image:
+  repository: localhost/myapp
+  pullPolicy: IfNotPresent
+  tag: ""
+
+sidecar:
+  image:
+    repository: localhost/sidecar
+    pullPolicy: IfNotPresent
+    tag: ""
+
+initContainer:
+  image:
+    repository: localhost/init
+    pullPolicy: IfNotPresent
+    tag: ""
+
+service:
+  type: ClusterIP
+  port: 80
+
+resources:
+  limits:
+    cpu: 100m
+    memory: 128Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi 

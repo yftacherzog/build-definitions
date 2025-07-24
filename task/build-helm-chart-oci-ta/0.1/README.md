@@ -16,10 +16,12 @@ from the tag, followed by an abbreviated SHA as build metadata.
 |CA_TRUST_CONFIG_MAP_NAME|The name of the ConfigMap to read CA bundle data from.|trusted-ca|false|
 |CHART_CONTEXT|Path relative to SOURCE_CODE_DIR where the chart is located|dist/chart/|false|
 |COMMIT_SHA|Git commit sha to build chart for||true|
-|REPO|Designated registry for the chart to be pushed to||true|
+|IMAGE_MAPPINGS|JSON array of image mappings to substitute in chart templates. Format: [{"source": "localhost/my/repo", "target": "quay.io/myorg/myapp"}] Source images will be replaced with target images in all YAML files in templates/. The task automatically appends the tag format: VERSION_SUFFIX-COMMIT_SHA (or just COMMIT_SHA if VERSION_SUFFIX is empty).|[]|false|
+|IMAGE|Full image reference with tag (e.g., quay.io/redhat-user-workloads/konflux-vanguard-tenant/caching/squid:on-pr-{{revision}})||true|
 |SOURCE_ARTIFACT|The Trusted Artifact URI pointing to the artifact with the application source code.||true|
 |SOURCE_CODE_DIR|Path relative to the workingDir where the code was pulled into|source|false|
 |TAG_PREFIX|An identifying prefix on which the version tag is to be matched|helm-|false|
+|VALUES_FILE|Name of the values file to process for image substitution (e.g., values.yaml, values-prod.yaml)|values.yaml|false|
 |VERSION_SUFFIX|A suffix to be added to the version string|""|false|
 
 ## Results

@@ -1,0 +1,30 @@
+apiVersion: tekton.dev/v1beta1
+kind: TaskRun
+metadata:
+  name: build-helm-chart-with-images
+spec:
+  taskRef:
+    name: build-helm-chart
+  params:
+  - name: REPO
+    value: "quay.io/myorg/mychart"
+  - name: COMMIT_SHA
+    value: "abc123"
+  - name: VALUES_FILE
+    value: "values.yaml"
+  - name: IMAGE_MAPPINGS
+    value: |
+      [
+        {
+          "source": "localhost/myapp",
+          "target": "quay.io/myorg/myapp"
+        },
+        {
+          "source": "localhost/sidecar",
+          "target": "quay.io/myorg/sidecar"
+        }
+      ]
+  workspaces:
+  - name: source
+    persistentVolumeClaim:
+      claimName: source-pvc 

@@ -1,0 +1,37 @@
+apiVersion: tekton.dev/v1beta1
+kind: TaskRun
+metadata:
+  name: build-squid-chart-with-image-substitution
+spec:
+  taskRef:
+    resolver: bundles
+    params:
+    - name: bundle
+      value: quay.io/yftacherzog/tekton-catalog/task-build-helm-chart-oci-ta:test-image-substitution@sha256:cee5a00d1fb6160e4366e4a8b0abc4e7712d53f68f2d2357d52dafee47079ff1
+    - name: name
+      value: build-helm-chart-oci-ta
+    - name: kind
+      value: task
+  params:
+  - name: IMAGE
+    value: "quay.io/yftacherzog/squid-chart:on-pr-abc123"
+  - name: COMMIT_SHA
+    value: "abc123"
+  - name: SOURCE_ARTIFACT
+    value: "oci://quay.io/yftacherzog/squid-source:latest"
+  - name: VALUES_FILE
+    value: "values.yaml"
+  - name: VERSION_SUFFIX
+    value: "v1.2.3"
+  - name: IMAGE_MAPPINGS
+    value: |
+      [
+        {
+          "source": "localhost/konflux-ci/squid-test",
+          "target": "quay.io/yftacherzog/squid-test"
+        },
+        {
+          "source": "localhost/konflux-ci/squid",
+          "target": "quay.io/yftacherzog/squid"
+        }
+      ] 

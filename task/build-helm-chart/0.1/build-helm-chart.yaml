@@ -15,6 +15,9 @@ spec:
     tag prefixed with the value of TAG_PREFIX. The value of that tag will be used as
     the version's X.Y values, and the Z value will be computed by the commit's distance
     from the tag, followed by an abbreviated SHA as build metadata.
+
+    The task also supports image substitution in the chart templates. Use the IMAGE_MAPPINGS
+    parameter to specify source images to be replaced with target images and tags.
   params:
   - name: REPO
     description: Designated registry for the chart to be pushed to
@@ -32,6 +35,16 @@ spec:
   - name: TAG_PREFIX
     description: An identifying prefix on which the version tag is to be matched
     default: "helm-"
+  - name: IMAGE_MAPPINGS
+    description: |-
+      JSON array of image mappings to substitute in chart templates.
+      Format: [{"source": "localhost/my/repo", "target": "quay.io/myorg/myapp"}]
+      Source images will be replaced with target images in all YAML files in templates/.
+      The task automatically appends the tag format: VERSION_SUFFIX-COMMIT_SHA (or just COMMIT_SHA if VERSION_SUFFIX is empty).
+    default: "[]"
+  - name: VALUES_FILE
+    description: Name of the values file to process for image substitution (e.g., values.yaml, values-prod.yaml)
+    default: "values.yaml"
   - name: CA_TRUST_CONFIG_MAP_NAME
     type: string
     description: The name of the ConfigMap to read CA bundle data from.
@@ -61,6 +74,10 @@ spec:
       value: "$(params.VERSION_SUFFIX)"
     - name: TAG_PREFIX
       value: "$(params.TAG_PREFIX)"
+    - name: IMAGE_MAPPINGS
+      value: "$(params.IMAGE_MAPPINGS)"
+    - name: VALUES_FILE
+      value: "$(params.VALUES_FILE)"
     workingDir: $(workspaces.source.path)
     securityContext:
       runAsUser: 0
@@ -73,6 +90,60 @@ spec:
       # Rename the chart according to the output registry
       export chart_name="${REPO##*/}"
       yq -i '.name = strenv(chart_name)' Chart.yaml
+
+      # Process image mappings if provided
+      if [ "$IMAGE_MAPPINGS" != "[]" ]; then
+        echo "Processing image mappings..."
+        
+        # Create the standardized tag format
+        if [ -n "$VERSION_SUFFIX" ]; then
+          standardized_tag="${VERSION_SUFFIX}-${COMMIT_SHA}"
+        else
+          standardized_tag="${COMMIT_SHA}"
+        fi
+        
+        echo "Using standardized tag: $standardized_tag"
+        
+        # Parse the JSON array and perform substitutions
+        echo "$IMAGE_MAPPINGS" | jq -c '.[]' | while read -r mapping; do
+          source_image=$(echo "$mapping" | jq -r '.source')
+          target_image=$(echo "$mapping" | jq -r '.target')
+          
+          # Extract registry and repository from target image, then apply standardized tag
+          if [[ "$target_image" =~ ^([^:]+)(:.*)?$ ]]; then
+            registry_repo="${BASH_REMATCH[1]}"
+            final_image="${registry_repo}:${standardized_tag}"
+          else
+            # Fallback if parsing fails
+            final_image="${target_image}:${standardized_tag}"
+          fi
+          
+          echo "Replacing '$source_image' with '$final_image' in templates and $VALUES_FILE..."
+          
+          # Find all YAML files in templates directory and substitute images
+          if [ -d "templates" ]; then
+            find templates -name "*.yaml" -o -name "*.yml" | while read -r template_file; do
+              # Use sed to replace the source image with final image (with standardized tag)
+              # This handles both image: and image: "quoted" formats
+              sed -i "s|image: *[\"']*$source_image[\"']*|image: \"$final_image\"|g" "$template_file"
+              sed -i "s|image: *$source_image|image: \"$final_image\"|g" "$template_file"
+            done
+          fi
+          
+          # Also process the specified values file if it exists
+          if [ -f "$VALUES_FILE" ]; then
+            echo "Processing $VALUES_FILE..."
+            # Use sed to replace the source image with final image (with standardized tag)
+            # This handles both image: and repository: fields, with various quote formats
+            sed -i "s|image: *[\"']*$source_image[\"']*|image: \"$final_image\"|g" "$VALUES_FILE"
+            sed -i "s|image: *$source_image|image: \"$final_image\"|g" "$VALUES_FILE"
+            sed -i "s|repository: *[\"']*$source_image[\"']*|repository: \"$final_image\"|g" "$VALUES_FILE"
+            sed -i "s|repository: *$source_image|repository: \"$final_image\"|g" "$VALUES_FILE"
+          fi
+        done
+        
+        echo "Image substitution completed."
+      fi
 
       # We need git tags and history to be able to compute the chart version
       git fetch --unshallow --tags origin "$COMMIT_SHA"

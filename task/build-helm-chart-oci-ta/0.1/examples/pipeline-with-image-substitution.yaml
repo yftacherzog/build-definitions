@@ -1,0 +1,29 @@
+apiVersion: tekton.dev/v1beta1
+kind: TaskRun
+metadata:
+  name: build-helm-chart-with-images
+spec:
+  taskRef:
+    name: build-helm-chart-oci-ta
+  params:
+  - name: IMAGE
+    value: "quay.io/myorg/mychart:latest"
+  - name: COMMIT_SHA
+    value: "abc123"
+  - name: SOURCE_ARTIFACT
+    value: "oci://quay.io/myorg/source:latest"
+  - name: VALUES_FILE
+    value: "values.yaml"
+  - name: IMAGE_MAPPINGS
+    value: |
+      [
+        {
+          "source": "localhost/myapp",
+          "target": "quay.io/myorg/myapp"
+        },
+        {
+          "source": "localhost/sidecar",
+          "target": "quay.io/myorg/sidecar"
+        }
+      ]
+ 

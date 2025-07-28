@@ -36,7 +36,7 @@ spec:
         Format: [{"source": "localhost/my/repo", "target": "quay.io/myorg/myapp"}]
         Source images will be replaced with target images in all YAML files in templates/.
         The task automatically appends the tag format: VERSION_SUFFIX-COMMIT_SHA (or just COMMIT_SHA if VERSION_SUFFIX is empty).
-      default: '[]'
+      default: "[]"
     - name: IMAGE
       description: Full image reference with tag (e.g., quay.io/redhat-user-workloads/konflux-vanguard-tenant/caching/squid:on-pr-{{revision}})
     - name: SOURCE_ARTIFACT
@@ -126,15 +126,6 @@ spec:
         if [ "$IMAGE_MAPPINGS" != "[]" ]; then
           echo "Processing image mappings..."
 
-          # Create the standardized tag format
-          if [ -n "$VERSION_SUFFIX" ]; then
-            standardized_tag="${VERSION_SUFFIX}-${COMMIT_SHA}"
-          else
-            standardized_tag="${COMMIT_SHA}"
-          fi
-
-          echo "Using standardized tag: $standardized_tag"
-
           # Parse the JSON array and perform substitutions
           # Sort by source image length (longest first) to avoid partial matches
           # Use bash string length and sort to process longer images first
@@ -145,36 +136,59 @@ spec:
             source_image=$(echo "$mapping" | jq -r '.source')
             target_image=$(echo "$mapping" | jq -r '.target')
 
-            # Extract registry and repository from target image, then apply standardized tag
-            if [[ "$target_image" =~ ^([^:]+)(:.*)?$ ]]; then
-              registry_repo="${BASH_REMATCH[1]}"
-              final_image="${registry_repo}:${standardized_tag}"
-            else
-              # Fallback if parsing fails
-              final_image="${target_image}:${standardized_tag}"
-            fi
-
-            echo "Replacing '$source_image' with '$final_image' in templates and $VALUES_FILE..."
+            echo "Replacing '$source_image' with '$target_image' in templates and $VALUES_FILE..."
 
             # Find all YAML files in templates directory and substitute images
             if [ -d "templates" ]; then
               find templates -name "*.yaml" -o -name "*.yml" | while read -r template_file; do
-                # Use sed to replace the source image with final image (with standardized tag)
-                # This handles both image: and image: "quoted" formats
-                sed -i "s|image: *[\"']*$source_image[\"']*|image: \"$final_image\"|g" "$template_file"
-                sed -i "s|image: *$source_image|image: \"$final_image\"|g" "$template_file"
+                sed -i -re "s|image: *[\"']?$source_image[\"']?|image: \"$target_image\"|g" "$template_file"
               done
             fi
 
             # Also process the specified values file if it exists
             if [ -f "$VALUES_FILE" ]; then
               echo "Processing $VALUES_FILE..."
-              # Use sed to replace the source image with final image (with standardized tag)
-              # This handles both image: and repository: fields, with various quote formats
-              sed -i "s|image: *[\"']*$source_image[\"']*|image: \"$final_image\"|g" "$VALUES_FILE"
-              sed -i "s|image: *$source_image|image: \"$final_image\"|g" "$VALUES_FILE"
-              sed -i "s|repository: *[\"']*$source_image[\"']*|repository: \"$final_image\"|g" "$VALUES_FILE"
-              sed -i "s|repository: *$source_image|repository: \"$final_image\"|g" "$VALUES_FILE"
+              
+              # Extract repository and tag from target_image using bash syntax
+              if [[ "$target_image" == *:* ]]; then
+                # Image has a tag
+                target_repo="${target_image%:*}"
+                target_tag="${target_image#*:}"
+              else
+                # Image has no tag, default to latest
+                target_repo="$target_image"
+                target_tag="latest"
+              fi
+              
+              # Extract repository and tag from source_image for comparison
+              if [[ "$source_image" == *:* ]]; then
+                # Image has a tag
+                source_repo="${source_image%:*}"
+                source_tag="${source_image#*:}"
+              else
+                # Image has no tag, default to latest
+                source_repo="$source_image"
+                source_tag="latest"
+              fi
+              
+              # Use yq to replace simple image fields (not repository/tag pairs)
+              # Find all image fields that match the source_image exactly and replace with target_image
+              # Handle nested image fields at any level in the YAML structure, including arrays
+              yq -i "
+                with(.. | select(type == \"!!map\" and has(\"image\") and .image == \"$source_image\"); 
+                  .image = \"$target_image\"
+                )
+              " "$VALUES_FILE"
+              
+              # Use yq to properly handle YAML structure with repository/tag pairs
+              # Find all image objects that have repository/tag fields matching source_image
+              # Handle nested image structures at any level in the YAML, including arrays
+              yq -i "
+                with(.. | select(type == \"!!map\" and has(\"image\") and .image.repository? == \"$source_repo\" and (.image.tag? // \"latest\") == \"$source_tag\"); 
+                  .image.repository = \"$target_repo\" | 
+                  .image.tag = \"$target_tag\"
+                )
+              " "$VALUES_FILE"
             fi
           done
 
@@ -271,7 +285,7 @@ spec:
           echo "Skopeo output: $skopeo_output"
           exit 1
         fi
-        
+
         # Extract digest from the skopeo copy output
         digest=$(echo "$skopeo_output" | grep "Copying config" | awk '{print $3}' 2>/dev/null || echo "")
         if [ -n "$digest" ]; then
